@@ -1,0 +1,90 @@
+name: instagram-agent
+
+on:
+  schedule:
+    - cron: "5 * * * *"        # каждый час: inbox, публикации, комментарии, плюс задачи по времени
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "Команда (tick, inbox, plan, write, publish, analyze, comments, status)"
+        default: tick
+  push:
+    branches: [main]
+    paths: ["content/inbox/**", "content/queue/**", "content/replies.yaml"]
+
+concurrency:
+  group: instagram-agent
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      IG_USER_ID: ${{ secrets.IG_USER_ID }}
+      IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      S3_REGION: ${{ secrets.S3_REGION }}
+      PUBLIC_MEDIA_BASE_URL: ${{ secrets.PUBLIC_MEDIA_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+      - run: pip install -r requirements.txt
+
+      - name: Run agent
+        run: |
+          CMD="${{ github.event.inputs.command }}"
+          # При push (новые файлы в inbox или одобрение поста) — обработать inbox и опубликовать то, что пора
+          if [ "${{ github.event_name }}" = "push" ]; then CMD="inbox"; fi
+          python -m igagent "${CMD:-tick}"
+          if [ "${{ github.event_name }}" = "push" ]; then python -m igagent publish; python -m igagent comments; python -m igagent status; fi
+
+      - name: Commit state
+        if: always()
+        run: |
+          git config user.name "instagram-agent"
+          git config user.email "instagram-agent@users.noreply.github.com"
+          git add -A content data reports
+          git diff --cached --quiet || git commit -m "agent: $(date -u +%Y-%m-%dT%H:%MZ)"
+          git pull --rebase -X theirs origin "${GITHUB_REF_NAME}" && git push
+
+  # Продление токена Instagram раз в 2 недели (живёт 60 дней).
+  # Нужен секрет GH_PAT (fine-grained token с правом Secrets: write на этот репозиторий).
+  refresh-token:
+    if: github.event_name == 'schedule' && github.event.schedule == '5 * * * *'
+    runs-on: ubuntu-latest
+    env:
+      IG_USER_ID: ${{ secrets.IG_USER_ID }}
+      IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+      GH_TOKEN: ${{ secrets.GH_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check schedule
+        id: when
+        run: |
+          # 1-е и 15-е число, 03:05 UTC
+          if [ "$(date -u +%H)" = "03" ] && { [ "$(date -u +%d)" = "01" ] || [ "$(date -u +%d)" = "15" ]; }; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-python@v5
+        if: steps.when.outputs.run == 'true' && env.GH_TOKEN != ''
+        with:
+          python-version: "3.12"
+      - if: steps.when.outputs.run == 'true' && env.GH_TOKEN != ''
+        run: |
+          pip install -q -r requirements.txt
+          NEW_TOKEN_FILE="$RUNNER_TEMP/token" python -m igagent refresh-token
+          gh secret set IG_ACCESS_TOKEN < "$RUNNER_TEMP/token"
+          rm -f "$RUNNER_TEMP/token"

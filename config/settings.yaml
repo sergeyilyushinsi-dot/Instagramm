@@ -1,0 +1,48 @@
+# Технические настройки агента
+
+timezone: "Europe/Moscow"
+
+claude:
+  model: claude-opus-5-5
+  effort: medium            # low | medium | high — для текстов medium обычно достаточно
+
+instagram:
+  api_version: "v23.0"
+  base_url: "https://graph.instagram.com"
+
+# Расписание публикаций: дни недели (0 = пн) и время слотов
+schedule:
+  posts_per_week: 4
+  stories_per_day: 2
+  slots:
+    - {weekday: 0, time: "19:00"}
+    - {weekday: 2, time: "19:00"}
+    - {weekday: 4, time: "12:00"}
+    - {weekday: 6, time: "11:00"}
+
+# Безопасность: по умолчанию ничего не уходит без твоего одобрения
+approval:
+  require_for_posts: true   # публиковать только элементы со status: approved
+  require_for_replies: true # ответы на комментарии — только одобренные
+  # Если require_for_replies: false — агент сам отвечает на простые комментарии
+  # (благодарности, эмодзи). Вопросы и негатив всегда идут на одобрение.
+
+media:
+  image_aspect: "4:5"       # 4:5 | 1:1 | 1.91:1 для ленты
+  max_reel_seconds: 90
+  enhance_photos: true      # лёгкая автокоррекция контраста/резкости
+
+# Где хранить медиа для Instagram (API принимает только публичные URL)
+storage:
+  provider: s3              # s3 (AWS / Cloudflare R2 / любой S3-совместимый)
+  prefix: "instagram/"
+
+analytics:
+  lookback_days: 60
+  use_web_search: true      # искать тренды ниши через веб-поиск Claude
+
+# Оформление автоматических каруселей
+slides:
+  background: "#F5F1EA"
+  text: "#1C1C1C"
+  accent: "#E2552D"

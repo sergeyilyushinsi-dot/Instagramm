@@ -1,0 +1,6 @@
+anthropic>=1.12
+pydantic>=2.7
+pyyaml>=6.0
+pillow>=10.4
+requests>=2.32
+boto3>=1.34
