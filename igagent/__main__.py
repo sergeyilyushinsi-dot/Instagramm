@@ -74,7 +74,7 @@ def cmd_refresh_token(_):
 CLAUDE = ["ANTHROPIC_API_KEY"]
 IG = ["IG_USER_ID", "IG_ACCESS_TOKEN"]
 S3 = ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "PUBLIC_MEDIA_BASE_URL"]
-NEEDS = {"inbox": CLAUDE, "publish": IG + S3, "comments": IG + CLAUDE, "analyze": IG + CLAUDE,
+NEEDS = {"inbox": [], "publish": IG + S3, "comments": IG + CLAUDE, "analyze": IG + CLAUDE,
          "plan": CLAUDE, "write": CLAUDE, "sync": IG, "status": []}
 
 
@@ -135,18 +135,7 @@ def cmd_check(_):
         sys.exit(1)
 
 
-def cmd_tick(_):
-    """Один «такт» по расписанию (запускается раз в час из GitHub Actions)."""
-    now = datetime.now(config.tz())
-    steps = [("inbox", cmd_inbox), ("publish", cmd_publish), ("comments", cmd_comments)]
-    if now.hour == 7:
-        # Без ключа Claude хотя бы собираем статистику — анализ можно сделать в сессии с Claude
-        steps.append(("analyze", cmd_analyze) if not _missing(CLAUDE) else ("sync", cmd_sync))
-    if now.weekday() == 6 and now.hour == 10:
-        steps.append(("plan", cmd_plan))
-    if now.hour in (10, 18):
-        steps.append(("write", cmd_write))
-    steps.append(("status", cmd_status))
+def _run_steps(steps) -> None:
     failed = False
     for name, fn in steps:
         missing = _missing(NEEDS.get(name, []))
@@ -163,6 +152,26 @@ def cmd_tick(_):
         sys.exit(1)
 
 
+def cmd_onpush(_):
+    """Запуск после push: новые медиа, одобренные посты, ответы на комментарии."""
+    _run_steps([("inbox", cmd_inbox), ("publish", cmd_publish), ("comments", cmd_comments), ("status", cmd_status)])
+
+
+def cmd_tick(_):
+    """Один «такт» по расписанию (запускается раз в час из GitHub Actions)."""
+    now = datetime.now(config.tz())
+    steps = [("inbox", cmd_inbox), ("publish", cmd_publish), ("comments", cmd_comments)]
+    if now.hour == 7:
+        # Без ключа Claude хотя бы собираем статистику — анализ можно сделать в сессии с Claude
+        steps.append(("analyze", cmd_analyze) if not _missing(CLAUDE) else ("sync", cmd_sync))
+    if now.weekday() == 6 and now.hour == 10:
+        steps.append(("plan", cmd_plan))
+    if now.hour in (10, 18):
+        steps.append(("write", cmd_write))
+    steps.append(("status", cmd_status))
+    _run_steps(steps)
+
+
 COMMANDS = {
     "inbox": (cmd_inbox, "обработать новые фото/видео из content/inbox"),
     "plan": (cmd_plan, "составить контент-план на неделю"),
@@ -174,6 +183,7 @@ COMMANDS = {
     "status": (cmd_status, "сводка очереди в reports/queue.md"),
     "refresh-token": (cmd_refresh_token, "продлить токен Instagram"),
     "check": (cmd_check, "проверить подключения к Instagram, Claude и хранилищу"),
+    "onpush": (cmd_onpush, "после push: inbox, публикация, комментарии"),
     "tick": (cmd_tick, "всё по расписанию (для cron)"),
 }
 

@@ -1,6 +1,7 @@
 """Работа с контентом: разбор фото/видео из inbox, тексты постов, карусели."""
 from __future__ import annotations
 
+import os
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -76,6 +77,10 @@ def process_inbox() -> list[QueueItem]:
         if existing:
             items.append(_attach_media(existing, files))
             continue
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            # Без ключа Claude новые файлы ждут разбора в сессии с Claude
+            print(f"ждёт разбора: {files[0].relative_to(config.ROOT)}")
+            continue
         analysis = analyze_media(files[0])
         fmt = "carousel" if len(files) > 1 else analysis.best_format
         if media.is_video(files[0]) and fmt not in ("reels", "story"):
@@ -141,7 +146,9 @@ def _attach_media(item: QueueItem, files: list[Path]) -> QueueItem:
             processed.append(media.process_image(f, out_dir, aspect="9:16" if item.format == "story" else None))
     item.media = [str(p.relative_to(config.ROOT)) for p in processed]
     item.slides = []
-    write_post(item, media_paths=processed)  # переписываем текст с учётом реальных кадров
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        write_post(item, media_paths=processed)  # переписываем текст с учётом реальных кадров
+    item.media_brief = ""
     item.status = "draft"
     item.save()
     _archive(item.id, files)

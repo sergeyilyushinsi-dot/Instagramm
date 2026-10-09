@@ -47,9 +47,8 @@ jobs:
         run: |
           CMD="${{ github.event.inputs.command }}"
           # При push (новые файлы в inbox или одобрение поста) — обработать inbox и опубликовать то, что пора
-          if [ "${{ github.event_name }}" = "push" ]; then CMD="inbox"; fi
+          if [ "${{ github.event_name }}" = "push" ]; then CMD="onpush"; fi
           python -m igagent "${CMD:-tick}"
-          if [ "${{ github.event_name }}" = "push" ]; then python -m igagent publish; python -m igagent comments; python -m igagent status; fi
 
       - name: Commit state
         if: always()
