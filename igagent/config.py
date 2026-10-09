@@ -48,7 +48,8 @@ def tz() -> ZoneInfo:
 
 
 def env(name: str, required: bool = True) -> str:
-    value = os.environ.get(name, "")
+    # Убираем пробелы, переносы строк и кавычки, которые часто попадают при копировании
+    value = os.environ.get(name, "").strip().strip("'\"").strip()
     if required and not value:
         raise RuntimeError(f"Не задана переменная окружения {name} (см. .env.example)")
     return value

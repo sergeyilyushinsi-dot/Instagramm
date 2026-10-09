@@ -105,6 +105,10 @@ def cmd_check(_):
         return f"ключ работает, модель {llm.client().models.retrieve(model).id}"
 
     def instagram():
+        token = config.env("IG_ACCESS_TOKEN")
+        if not token.startswith("IG"):
+            raise RuntimeError(f"маркер должен начинаться с «IG» (обычно IGAA…) и быть длиной ~150–250 символов; "
+                               f"сейчас начинается с «{token[:2]}», длина {len(token)}")
         ig = Instagram()
         acc = ig.account()
         perms = []
