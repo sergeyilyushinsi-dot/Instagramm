@@ -75,7 +75,7 @@ CLAUDE = ["ANTHROPIC_API_KEY"]
 IG = ["IG_USER_ID", "IG_ACCESS_TOKEN"]
 S3 = ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "PUBLIC_MEDIA_BASE_URL"]
 NEEDS = {"inbox": CLAUDE, "publish": IG + S3, "comments": IG + CLAUDE, "analyze": IG + CLAUDE,
-         "plan": CLAUDE, "write": CLAUDE, "status": []}
+         "plan": CLAUDE, "write": CLAUDE, "sync": IG, "status": []}
 
 
 def _missing(names: list[str]) -> list[str]:
@@ -140,7 +140,8 @@ def cmd_tick(_):
     now = datetime.now(config.tz())
     steps = [("inbox", cmd_inbox), ("publish", cmd_publish), ("comments", cmd_comments)]
     if now.hour == 7:
-        steps.append(("analyze", cmd_analyze))
+        # Без ключа Claude хотя бы собираем статистику — анализ можно сделать в сессии с Claude
+        steps.append(("analyze", cmd_analyze) if not _missing(CLAUDE) else ("sync", cmd_sync))
     if now.weekday() == 6 and now.hour == 10:
         steps.append(("plan", cmd_plan))
     if now.hour in (10, 18):
