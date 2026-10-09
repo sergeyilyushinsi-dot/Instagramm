@@ -49,7 +49,7 @@ def cmd_comments(_):
 
 
 def cmd_status(_):
-    rows = ["# Очередь контента\n", f"Обновлено: {datetime.now(config.tz()):%d.%m.%Y %H:%M}\n",
+    rows = ["# Очередь контента\n",
             "| Когда | Статус | Формат | Тема | Медиа | Файл |", "|---|---|---|---|---|---|"]
     items = sorted(load_all(), key=lambda i: i.scheduled_at or datetime.max.replace(tzinfo=config.tz()))
     for i in items:
@@ -71,6 +71,66 @@ def cmd_refresh_token(_):
         print(token)
 
 
+CLAUDE = ["ANTHROPIC_API_KEY"]
+IG = ["IG_USER_ID", "IG_ACCESS_TOKEN"]
+S3 = ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "PUBLIC_MEDIA_BASE_URL"]
+NEEDS = {"inbox": CLAUDE, "publish": IG + S3, "comments": IG + CLAUDE, "analyze": IG + CLAUDE,
+         "plan": CLAUDE, "write": CLAUDE, "status": []}
+
+
+def _missing(names: list[str]) -> list[str]:
+    return [n for n in names if not os.environ.get(n)]
+
+
+def cmd_check(_):
+    """Проверяет подключения, не печатая секретов."""
+    ok = True
+
+    def report(name, fn):
+        nonlocal ok
+        missing = _missing({"Claude": CLAUDE, "Instagram": IG, "Хранилище": S3}[name])
+        if missing:
+            ok = False
+            print(f"❌ {name}: не заданы секреты {', '.join(missing)}")
+            return
+        try:
+            print(f"✅ {name}: {fn()}")
+        except Exception as exc:  # noqa: BLE001
+            ok = False
+            print(f"❌ {name}: {str(exc)[:300]}")
+
+    def claude():
+        from . import llm
+        model = config.settings()["claude"]["model"]
+        return f"ключ работает, модель {llm.client().models.retrieve(model).id}"
+
+    def instagram():
+        ig = Instagram()
+        acc = ig.account()
+        perms = []
+        try:
+            ig.get(f"{ig.user_id}/insights", metric="reach", period="day")
+            perms.append("статистика ок")
+        except Exception as exc:  # noqa: BLE001
+            perms.append(f"нет доступа к статистике ({str(exc)[:120]})")
+        return f"@{acc.get('username')}, подписчиков {acc.get('followers_count')}, постов {acc.get('media_count')}; " + "; ".join(perms)
+
+    def storage():
+        import boto3
+        s3 = boto3.client("s3", endpoint_url=os.environ.get("S3_ENDPOINT_URL") or None,
+                          aws_access_key_id=os.environ["S3_ACCESS_KEY_ID"],
+                          aws_secret_access_key=os.environ["S3_SECRET_ACCESS_KEY"],
+                          region_name=os.environ.get("S3_REGION") or "auto")
+        s3.head_bucket(Bucket=os.environ["S3_BUCKET"])
+        return f"бакет {os.environ['S3_BUCKET']} доступен"
+
+    report("Instagram", instagram)
+    report("Claude", claude)
+    report("Хранилище", storage)
+    if not ok:
+        sys.exit(1)
+
+
 def cmd_tick(_):
     """Один «такт» по расписанию (запускается раз в час из GitHub Actions)."""
     now = datetime.now(config.tz())
@@ -84,6 +144,10 @@ def cmd_tick(_):
     steps.append(("status", cmd_status))
     failed = False
     for name, fn in steps:
+        missing = _missing(NEEDS.get(name, []))
+        if missing:
+            print(f"-- {name}: пропущено, нет секретов {', '.join(missing)}")
+            continue
         print(f"== {name}")
         try:
             fn(None)
@@ -104,6 +168,7 @@ COMMANDS = {
     "comments": (cmd_comments, "черновики ответов и отправка одобренных"),
     "status": (cmd_status, "сводка очереди в reports/queue.md"),
     "refresh-token": (cmd_refresh_token, "продлить токен Instagram"),
+    "check": (cmd_check, "проверить подключения к Instagram, Claude и хранилищу"),
     "tick": (cmd_tick, "всё по расписанию (для cron)"),
 }
 

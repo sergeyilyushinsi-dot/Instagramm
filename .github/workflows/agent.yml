@@ -6,10 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "Команда (tick, inbox, plan, write, publish, analyze, comments, status)"
+        description: "Команда (check, tick, inbox, plan, write, publish, analyze, comments, status)"
         default: tick
   push:
-    branches: [main]
     paths: ["content/inbox/**", "content/queue/**", "content/replies.yaml"]
 
 concurrency:
