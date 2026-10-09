@@ -48,7 +48,10 @@ def sync(ig) -> dict:
         ts = datetime.fromisoformat(m["timestamp"].replace("+0000", "+00:00"))
         if ts < since:
             continue
-        m["insights"] = ig.media_insights(m["id"], m.get("media_product_type", ""))
+        try:
+            m["insights"] = ig.media_insights(m["id"], m.get("media_product_type", ""))
+        except Exception:  # noqa: BLE001 — для старых постов статистика бывает недоступна
+            m["insights"] = {}
         m.update(known.get(m["id"], {}))
         reach = m["insights"].get("reach") or 0
         interactions = m["insights"].get("total_interactions") or (m.get("like_count", 0) + m.get("comments_count", 0))

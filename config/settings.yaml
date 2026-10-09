@@ -38,7 +38,7 @@ storage:
   prefix: "instagram/"
 
 analytics:
-  lookback_days: 60
+  lookback_days: 730       # за какой период анализировать посты
   use_web_search: true      # искать тренды ниши через веб-поиск Claude
 
 # Оформление автоматических каруселей
