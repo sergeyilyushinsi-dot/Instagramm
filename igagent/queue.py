@@ -25,6 +25,7 @@ class Slide(BaseModel):
     body: str = ""
     cta: str = ""       # текст кнопки внизу (по умолчанию «Листай» / «Сохрани себе»)
     image: str = ""     # путь к фото для центра слайда (необязательно)
+    visual: dict = Field(default_factory=dict)  # инфографика: {type: hub|persona|funnel|journey|matrix|chart|donut, ...}
 
 
 class QueueItem(BaseModel):

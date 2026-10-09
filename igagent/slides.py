@@ -310,7 +310,8 @@ def _render_neon(slides: list[dict], out_dir: Path, handle: str) -> list[Path]:
     total = len(slides)
     for idx, slide in enumerate(slides, start=1):
         img = _background(c, seed=idx * 7919 + len(slide.get("title", "")))
-        _glass_tiles(img, seed=idx)
+        if not slide.get("visual"):
+            _glass_tiles(img, seed=idx)
         d = ImageDraw.Draw(img)
         _logo(img, handle, c)
         counter = f"{idx}/{total}"
@@ -336,7 +337,15 @@ def _render_neon(slides: list[dict], out_dir: Path, handle: str) -> list[Path]:
         hero_top, hero_bottom = max(y + 50, 640), H - 190
         hero_center = (W // 2, (hero_top + hero_bottom) // 2)
         image = slide.get("image")
-        if image and (config.ROOT / image).exists():
+        visual = slide.get("visual") or {}
+        if visual:
+            if number:  # номер шага — маленький светящийся бейдж над схемой
+                _glow_layer(img, lambda o: o.ellipse([W / 2 - 34, hero_top - 34, W / 2 + 34, hero_top + 34],
+                                                     fill=(200, 235, 255, 255)), 14)
+                _center_text(ImageDraw.Draw(img), number, W / 2, hero_top, _mont(36, 900), c["mid"])
+                hero_top += 60
+            _visual(img, (90, hero_top, W - 90, hero_bottom - 10), visual, c)
+        elif image and (config.ROOT / image).exists():
             hw = min(820, int((hero_bottom - hero_top) * 1.25))
             hh = hero_bottom - hero_top
             _photo(img, config.ROOT / image, (W // 2 - hw // 2, hero_top, W // 2 + hw // 2, hero_top + hh), c)
@@ -352,3 +361,295 @@ def _render_neon(slides: list[dict], out_dir: Path, handle: str) -> list[Path]:
         img.convert("RGB").save(path, "JPEG", quality=93)
         paths.append(path)
     return paths
+
+
+# --- инфографика ---------------------------------------------------------------
+# В слайде: visual: {type: hub|persona|funnel|journey|matrix|chart|donut, ...}
+#   hub:     center, items[]                  — понятие и его составляющие
+#   persona: items[{label, sub}]              — роли / аудитории
+#   funnel:  items[]                          — воронка сверху вниз
+#   journey: items[], span                    — этапы пути; span — подпись над всей линией
+#   matrix:  x, y, points[{label, x, y}]      — позиционирование (x, y от 0 до 1)
+#   chart:   values[], forecast_from          — факт и пунктирный прогноз
+#   donut:   center, items[{label, value}]    — доли целого
+# Слова с *звёздочками* в подписях выделяются акцентом. Числа на схемах — иллюстрация,
+# подпись `note` выводится мелко под схемой (например «схема условная»).
+
+def _plain(text: str) -> tuple[str, bool]:
+    return text.replace("*", ""), "*" in text
+
+
+def _center_text(d, text, cx, cy, font, fill):
+    box = d.textbbox((0, 0), text, font=font)
+    d.text((cx - (box[2] - box[0]) / 2 - box[0], cy - (box[3] - box[1]) / 2 - box[1]), text, font=font, fill=fill)
+
+
+def _wrap_center(d, text, cx, cy, font, fill, max_w, line_h):
+    words, lines, cur = text.split(), [], ""
+    for w in words:
+        test = f"{cur} {w}".strip()
+        if cur and d.textlength(test, font=font) > max_w:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = test
+    lines.append(cur)
+    y = cy - (len(lines) - 1) * line_h / 2
+    for line in lines:
+        _center_text(d, line, cx, y, font, fill)
+        y += line_h
+
+
+def _glow_layer(img, draw_fn, blur=18):
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw_fn(ImageDraw.Draw(layer))
+    img.alpha_composite(layer.filter(ImageFilter.GaussianBlur(blur)))
+    img.alpha_composite(layer)
+
+
+def _panel(o, box, hl=False, radius=26, solid=False):
+    if solid:
+        fill = (55, 125, 240, 250) if hl else (16, 52, 160, 245)
+    else:
+        fill = (110, 190, 255, 95) if hl else (160, 200, 255, 40)
+    o.rounded_rectangle(box, radius=radius, fill=fill, outline=(190, 225, 255, 210 if hl else 130), width=3 if hl else 2)
+
+
+def _person(o, cx, cy, s, color):
+    o.ellipse([cx - s * .22, cy - s * .5, cx + s * .22, cy - s * .06], fill=color)
+    o.rounded_rectangle([cx - s * .38, cy, cx + s * .38, cy + s * .5], radius=int(s * .22), fill=color)
+
+
+def _v_hub(img, box, v, c):
+    x0, y0, x1, y1 = box
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+    items = v.get("items", [])
+    R = min(x1 - x0 - 260, y1 - y0 - 120) / 2
+    import math
+    pts = []
+    for i, _ in enumerate(items):
+        a = -math.pi / 2 + 2 * math.pi * i / max(1, len(items))
+        pts.append((cx + R * 1.25 * math.cos(a), cy + R * math.sin(a)))
+    _glow_layer(img, lambda o: [o.line([(cx, cy), p], fill=(140, 200, 255, 170), width=4) for p in pts], 10)
+    lf = _mont(28, 700)
+    o = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(o)
+    for (px, py), item in zip(pts, items):
+        text, hl = _plain(item)
+        tw = od.textlength(text, font=lf)
+        _panel(od, [px - tw / 2 - 26, py - 32, px + tw / 2 + 26, py + 32], hl, radius=32, solid=True)
+    _panel(od, [cx - 120, cy - 70, cx + 120, cy + 70], True, radius=40, solid=True)
+    img.alpha_composite(o)
+    d = ImageDraw.Draw(img)
+    for (px, py), item in zip(pts, items):
+        text, hl = _plain(item)
+        _center_text(d, text, px, py, lf, "white" if not hl else c["text"])
+    _wrap_center(d, v.get("center", ""), cx, cy, _mont(32, 800), "white", 210, 38)
+
+
+def _v_persona(img, box, v, c):
+    x0, y0, x1, y1 = box
+    items = v.get("items", [])
+    n = max(1, len(items))
+    gap = 26
+    cw = (x1 - x0 - gap * (n - 1)) / n
+    ch = min(y1 - y0, 360)
+    top = (y0 + y1 - ch) / 2
+    o = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(o)
+    for i, item in enumerate(items):
+        label, hl = _plain(item.get("label", ""))
+        bx = x0 + i * (cw + gap)
+        _panel(od, [bx, top, bx + cw, top + ch], hl)
+        _person(od, bx + cw / 2, top + ch * .36, ch * .38, (220, 240, 255, 235) if hl else (170, 205, 255, 200))
+    if any(_plain(it.get("label", ""))[1] for it in items):
+        img.alpha_composite(o.filter(ImageFilter.GaussianBlur(14)))
+    img.alpha_composite(o)
+    d = ImageDraw.Draw(img)
+    for i, item in enumerate(items):
+        label, hl = _plain(item.get("label", ""))
+        bx = x0 + i * (cw + gap)
+        _wrap_center(d, label, bx + cw / 2, top + ch * .74, _mont(30 if hl else 28, 800), "white", cw - 30, 34)
+        _wrap_center(d, item.get("sub", ""), bx + cw / 2, top + ch * .89, _mont(22, 600 if hl else 500),
+                     "white" if hl else c["muted"], cw - 30, 28)
+
+
+def _v_funnel(img, box, v, c):
+    x0, y0, x1, y1 = box
+    items = v.get("items", [])
+    n = max(1, len(items))
+    gap = 12
+    h = min(110, (y1 - y0 - gap * (n - 1)) / n)
+    total_h = n * h + gap * (n - 1)
+    top = (y0 + y1 - total_h) / 2
+    cx = (x0 + x1) / 2
+    wmax, wmin = (x1 - x0) * .92, (x1 - x0) * .38
+    o = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(o)
+    for i in range(n):
+        wt = wmax - (wmax - wmin) * i / n
+        wb = wmax - (wmax - wmin) * (i + 1) / n
+        yt = top + i * (h + gap)
+        alpha = 70 + int(120 * i / max(1, n - 1))
+        od.polygon([(cx - wt / 2, yt), (cx + wt / 2, yt), (cx + wb / 2, yt + h), (cx - wb / 2, yt + h)],
+                   fill=(110, 190, 255, alpha), outline=(200, 230, 255, 200))
+    img.alpha_composite(o.filter(ImageFilter.GaussianBlur(10)))
+    img.alpha_composite(o)
+    d = ImageDraw.Draw(img)
+    for i, item in enumerate(items):
+        text, hl = _plain(item)
+        _center_text(d, text, cx, top + i * (h + gap) + h / 2, _mont(32 if hl else 30, 800 if hl else 700),
+                     "white")
+
+
+def _v_journey(img, box, v, c):
+    x0, y0, x1, y1 = box
+    items = v.get("items", [])
+    n = max(2, len(items))
+    cy = (y0 + y1) / 2 + 20
+    xs = [x0 + 40 + (x1 - x0 - 80) * i / (n - 1) for i in range(len(items))]
+    _glow_layer(img, lambda o: o.line([(xs[0], cy), (xs[-1], cy)], fill=(140, 200, 255, 220), width=6), 10)
+    if v.get("span"):
+        def bracket(o):
+            by = cy - 120
+            o.line([(xs[0], by + 22), (xs[0], by), (xs[-1], by), (xs[-1], by + 22)], fill=(180, 220, 255, 200), width=3)
+        _glow_layer(img, bracket, 6)
+        d = ImageDraw.Draw(img)
+        nt = _plain(v["span"])[0]
+        f = _mont(28, 700)
+        tw = d.textlength(nt, font=f)
+        mx = (xs[0] + xs[-1]) / 2
+        _overlay(img, lambda o: o.rounded_rectangle([mx - tw / 2 - 24, cy - 148, mx + tw / 2 + 24, cy - 92],
+                                                     radius=28, fill=(10, 40, 130, 255), outline=(150, 210, 255, 220), width=2))
+        _center_text(ImageDraw.Draw(img), nt, mx, cy - 120, f, c["accent"])
+    for i, (x, item) in enumerate(zip(xs, items)):
+        text, hl = _plain(item)
+        r = 30 if hl else 24
+        _glow_layer(img, lambda o: o.ellipse([x - r, cy - r, x + r, cy + r], fill=(200, 235, 255, 255) if hl else (120, 190, 255, 255),
+                                             outline=(230, 245, 255, 255), width=3), 12)
+        d = ImageDraw.Draw(img)
+        _wrap_center(d, text, x, cy + 78 + (34 if i % 2 else 0), _mont(26, 700), c["accent"] if hl else "white", 180, 30)
+
+
+def _v_matrix(img, box, v, c):
+    x0, y0, x1, y1 = box
+    side = min(x1 - x0 - 120, y1 - y0 - 70)
+    ox, oy = (x0 + x1) / 2 - side / 2 + 20, (y0 + y1) / 2 + side / 2 - 10
+    def axes(o):
+        o.line([(ox, oy), (ox + side, oy)], fill=(180, 220, 255, 220), width=4)
+        o.line([(ox, oy), (ox, oy - side)], fill=(180, 220, 255, 220), width=4)
+        o.polygon([(ox + side + 14, oy), (ox + side, oy - 9), (ox + side, oy + 9)], fill=(180, 220, 255, 220))
+        o.polygon([(ox, oy - side - 14), (ox - 9, oy - side), (ox + 9, oy - side)], fill=(180, 220, 255, 220))
+        for k in (1, 2, 3):
+            o.line([(ox + side * k / 4, oy), (ox + side * k / 4, oy - side)], fill=(150, 200, 255, 45), width=2)
+            o.line([(ox, oy - side * k / 4), (ox + side, oy - side * k / 4)], fill=(150, 200, 255, 45), width=2)
+    _glow_layer(img, axes, 6)
+    d = ImageDraw.Draw(img)
+    f = _mont(24, 600)
+    d.text((ox + side - d.textlength(v.get("x", ""), font=f), oy + 14), v.get("x", ""), font=f, fill=c["muted"])
+    lbl = Image.new("RGBA", (400, 40), (0, 0, 0, 0))
+    ImageDraw.Draw(lbl).text((0, 0), v.get("y", ""), font=f, fill=c["muted"])
+    lbl = lbl.rotate(90, expand=True)
+    img.alpha_composite(lbl, (int(ox - 48), int(oy - side + 0)))
+    for p in v.get("points", []):
+        text, hl = _plain(p.get("label", ""))
+        px, py = ox + side * p.get("x", .5), oy - side * p.get("y", .5)
+        r = 26 if hl else 16
+        _glow_layer(img, lambda o: o.ellipse([px - r, py - r, px + r, py + r],
+                                             fill=(210, 240, 255, 255) if hl else (120, 180, 255, 230)), 16 if hl else 6)
+        d = ImageDraw.Draw(img)
+        d.text((px + r + 12, py - 18), text, font=_mont(30 if hl else 26, 800 if hl else 600),
+               fill=c["accent"] if hl else c["muted"])
+
+
+def _v_chart(img, box, v, c):
+    x0, y0, x1, y1 = box
+    vals = v.get("values", [])
+    split = v.get("forecast_from", len(vals))
+    if len(vals) < 2:
+        return
+    lo, hi = min(vals), max(vals)
+    gx0, gx1, gy0, gy1 = x0 + 30, x1 - 30, y0 + 40, y1 - 50
+    pts = [(gx0 + (gx1 - gx0) * i / (len(vals) - 1), gy1 - (gy1 - gy0) * (vv - lo) / max(1e-9, hi - lo)) for i, vv in enumerate(vals)]
+    def area(o):
+        poly = pts[:split] + [(pts[split - 1][0], gy1), (pts[0][0], gy1)]
+        o.polygon(poly, fill=(90, 170, 255, 70))
+        for k in range(4):
+            yy = gy0 + (gy1 - gy0) * k / 3
+            o.line([(gx0, yy), (gx1, yy)], fill=(150, 200, 255, 40), width=2)
+    _overlay(img, area)
+    _glow_layer(img, lambda o: o.line(pts[:split], fill=(200, 235, 255, 255), width=7, joint="curve"), 12)
+    def dashed(o):
+        seg = pts[split - 1:]
+        for a, b in zip(seg, seg[1:]):
+            n = 8
+            for k in range(0, n, 2):
+                p = (a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n)
+                q = (a[0] + (b[0] - a[0]) * (k + 1) / n, a[1] + (b[1] - a[1]) * (k + 1) / n)
+                o.line([p, q], fill=_rgb(c["accent"]) + (255,), width=6)
+        bx = pts[split - 1][0]
+        for yy in range(int(gy0), int(gy1), 18):
+            o.line([(bx, yy), (bx, yy + 9)], fill=(180, 220, 255, 120), width=2)
+    _glow_layer(img, dashed, 8)
+    d = ImageDraw.Draw(img)
+    f = _mont(26, 700)
+    d.text((pts[0][0], gy1 + 14), v.get("fact_label", "факт"), font=f, fill="white")
+    fl = v.get("forecast_label", "прогноз")
+    d.text((gx1 - d.textlength(fl, font=f), gy1 + 14), fl, font=f, fill=c["accent"])
+    lx, ly = pts[split - 1]
+    _glow_layer(img, lambda o: o.ellipse([lx - 14, ly - 14, lx + 14, ly + 14], fill=(255, 255, 255, 255)), 10)
+
+
+def _v_donut(img, box, v, c):
+    x0, y0, x1, y1 = box
+    items = v.get("items", [])
+    total = sum(i.get("value", 1) for i in items) or 1
+    r = min((y1 - y0) / 2 - 10, (x1 - x0) * .25)
+    cx, cy = x0 + r + 30, (y0 + y1) / 2
+    shades = [(40, 110, 230), (70, 140, 245), (100, 165, 255), (135, 190, 255), (170, 210, 255)]
+    o = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(o)
+    start = -90
+    for i, item in enumerate(items):
+        ext = 360 * item.get("value", 1) / total
+        hl = _plain(item.get("label", ""))[1]
+        col = _rgb(c["accent"]) if hl else shades[i % len(shades)]
+        rr = r + (14 if hl else 0)
+        od.pieslice([cx - rr, cy - rr, cx + rr, cy + rr], start + 1, start + ext - 1, fill=col + (255,))
+        start += ext
+    hole = r * .58
+    od.ellipse([cx - hole, cy - hole, cx + hole, cy + hole], fill=(0, 0, 0, 0))
+    mask = Image.new("L", (W, H), 255)
+    ImageDraw.Draw(mask).ellipse([cx - hole, cy - hole, cx + hole, cy + hole], fill=0)
+    o.putalpha(Image.composite(o.getchannel("A"), Image.new("L", (W, H), 0), mask))
+    img.alpha_composite(o.filter(ImageFilter.GaussianBlur(14)))
+    img.alpha_composite(o)
+    d = ImageDraw.Draw(img)
+    _wrap_center(d, v.get("center", ""), cx, cy, _mont(28, 800), "white", hole * 1.7, 32)
+    lx = cx + r + 60
+    ly = cy - (len(items) - 1) * 56 / 2
+    for i, item in enumerate(items):
+        text, hl = _plain(item.get("label", ""))
+        col = _rgb(c["accent"]) if hl else shades[i % len(shades)]
+        d.rounded_rectangle([lx, ly - 13, lx + 26, ly + 13], radius=7, fill=col)
+        d.text((lx + 42, ly - 18), text, font=_mont(30 if hl else 28, 800 if hl else 600),
+               fill=c["accent"] if hl else "white")
+        ly += 56
+
+
+VISUALS = {"hub": _v_hub, "persona": _v_persona, "funnel": _v_funnel, "journey": _v_journey,
+           "matrix": _v_matrix, "chart": _v_chart, "donut": _v_donut}
+
+
+def _visual(img, box, v, c) -> None:
+    fn = VISUALS.get(v.get("type", ""))
+    if not fn:
+        return
+    x0, y0, x1, y1 = box
+    note = v.get("note")
+    if note:
+        y1 -= 40
+    fn(img, (x0, y0, x1, y1), v, c)
+    if note:
+        d = ImageDraw.Draw(img)
+        _center_text(d, note, W / 2, y1 + 22, _mont(22, 500), c["muted"])
