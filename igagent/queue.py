@@ -21,8 +21,10 @@ Format = Literal["image", "carousel", "reels", "story"]
 
 
 class Slide(BaseModel):
-    title: str
+    title: str          # *слово* — выделить акцентным цветом
     body: str = ""
+    cta: str = ""       # текст кнопки внизу (по умолчанию «Листай» / «Сохрани себе»)
+    image: str = ""     # путь к фото для центра слайда (необязательно)
 
 
 class QueueItem(BaseModel):
