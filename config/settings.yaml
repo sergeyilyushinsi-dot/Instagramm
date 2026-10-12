@@ -36,7 +36,7 @@ media:
   enhance_photos: true      # лёгкая автокоррекция контраста/резкости
 
 telegram:
-  channel_title: ""         # название канала — для упоминаний в сторис
+  channel_title: "ЯEM"      # название канала — для упоминаний в сторис
   hashtags: false           # в Telegram хэштеги обычно не нужны
 
 # Где хранить медиа для Instagram (API принимает только публичные URL; Telegram не требует)
