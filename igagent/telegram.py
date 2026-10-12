@@ -47,10 +47,27 @@ def _split(text: str, limit: int) -> list[str]:
     return parts
 
 
+def normalize_chat(value: str) -> str:
+    """Принимает @name, name, t.me/name, https://t.me/name или числовой id."""
+    v = value.strip()
+    for prefix in ("https://", "http://"):
+        if v.startswith(prefix):
+            v = v[len(prefix):]
+    for prefix in ("t.me/", "telegram.me/"):
+        if v.startswith(prefix):
+            v = v[len(prefix):]
+    v = v.strip("/")
+    if v.startswith("+") or v.startswith("joinchat/"):
+        raise TelegramError("это ссылка-приглашение приватного канала — нужен числовой id канала (см. check)")
+    if v.lstrip("-").isdigit() or v.startswith("@"):
+        return v
+    return "@" + v
+
+
 class Telegram:
     def __init__(self) -> None:
         self.token = config.env("TG_BOT_TOKEN")
-        self.chat = config.env("TG_CHANNEL")  # @username канала или числовой id -100…
+        self.chat = normalize_chat(config.env("TG_CHANNEL"))  # @username канала или числовой id -100…
 
     def _call(self, method: str, files: dict | None = None, **params) -> dict:
         resp = requests.post(f"https://api.telegram.org/bot{self.token}/{method}",
@@ -61,9 +78,26 @@ class Telegram:
         return payload["result"]
 
     # --- проверка ------------------------------------------------------------
+    def known_channels(self) -> list[str]:
+        """Каналы, куда бота недавно добавили (из getUpdates) — чтобы узнать id приватного канала."""
+        found = {}
+        for upd in self._call("getUpdates", allowed_updates=json.dumps(["my_chat_member", "channel_post"])):
+            chat = (upd.get("my_chat_member") or upd.get("channel_post") or {}).get("chat", {})
+            if chat.get("type") == "channel":
+                found[chat["id"]] = chat.get("title", "")
+        return [f"{title} → id {cid}" for cid, title in found.items()]
+
     def check(self) -> str:
         me = self._call("getMe")
-        chat = self._call("getChat", chat_id=self.chat)
+        try:
+            chat = self._call("getChat", chat_id=self.chat)
+        except TelegramError as exc:
+            hint = self.known_channels()
+            raise TelegramError(
+                f"{exc}. Бот @{me['username']} работает, но канал «{self.chat}» не найден. "
+                + (f"Каналы, где бот админ: {'; '.join(hint)} — впиши этот id в TG_CHANNEL."
+                   if hint else "Проверь @username канала; для приватного канала опубликуй в нём любое "
+                                "сообщение и запусти check ещё раз — агент покажет его id.")) from exc
         member = self._call("getChatMember", chat_id=self.chat, user_id=me["id"])
         if member.get("status") != "administrator" or not member.get("can_post_messages", True):
             raise TelegramError(f"бот @{me['username']} не админ канала или не может публиковать")
