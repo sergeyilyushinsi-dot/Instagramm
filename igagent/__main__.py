@@ -71,6 +71,29 @@ def cmd_teaser(args):
     print(f"draft: {teaser.id} → {teaser.media[0]}")
 
 
+def cmd_lint(args):
+    """Проверка текста карточки скиллами ig-human и ig-caption: python -m igagent lint <id>."""
+    import subprocess
+    import tempfile
+    import yaml
+    from .queue import QueueItem
+    path = config.QUEUE_DIR / f"{args.item_id}.yaml"
+    item = QueueItem.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    skills = config.ROOT / ".claude" / "skills"
+    texts = {"caption": item.full_caption()}
+    if item.reels_script:
+        texts["reels_script"] = item.reels_script
+    for name, text in texts.items():
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:
+            f.write(text)
+        print(f"===== {name}")
+        subprocess.run([sys.executable, str(skills / "ig-human" / "humanize.py"), f.name, "--report",
+                        "-o", os.devnull])
+        subprocess.run([sys.executable, str(skills / "ig-human" / "detect.py"), f.name])
+        if name == "caption" and item.channel == "instagram":
+            subprocess.run([sys.executable, str(skills / "ig-caption" / "caption.py"), f.name])
+
+
 def cmd_refresh_token(_):
     token = Instagram().refresh_token()["access_token"]
     out = os.environ.get("NEW_TOKEN_FILE")
@@ -199,6 +222,7 @@ COMMANDS = {
     "comments": (cmd_comments, "черновики ответов и отправка одобренных"),
     "status": (cmd_status, "сводка очереди в reports/queue.md"),
     "refresh-token": (cmd_refresh_token, "продлить токен Instagram"),
+    "lint": (cmd_lint, "проверить текст карточки скиллами ig-human/ig-caption: lint <id>"),
     "teaser": (cmd_teaser, "сделать сторис-анонс Telegram-поста: teaser <id>"),
     "check": (cmd_check, "проверить подключения к Instagram, Claude и хранилищу"),
     "onpush": (cmd_onpush, "после push: inbox, публикация, комментарии"),
@@ -211,7 +235,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     for name, (_, help_text) in COMMANDS.items():
         sp = sub.add_parser(name, help=help_text)
-        if name == "teaser":
+        if name in ("teaser", "lint"):
             sp.add_argument("item_id")
     args = parser.parse_args()
     COMMANDS[args.command][0](args)

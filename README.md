@@ -45,6 +45,16 @@ publish              → загрузка медиа в хранилище → I
   агент прикрепит их к этой карточке и перепишет текст с учётом кадров.
 - **Ответ на комментарий:** в `content/replies.yaml` поставь `approved: true` (текст можно поправить).
 
+## Скиллы /ig-* для Claude Code
+
+В `.claude/skills/` — 13 скиллов из [instagram-agent-skill](https://github.com/Jakeschincariol/instagram-agent-skill)
+(MIT), адаптированные под русский язык (см. `.claude/skills/README-ru.md`). Они загружаются в любой сессии
+Claude Code с этим репозиторием: `/ig-reel`, `/ig-story`, `/ig-caption`, `/ig-carousel`, `/ig-plan`,
+`/ig-human`, `/ig-audit`, `/ig-profile`, `/ig-viral`, `/ig-reply`, `/ig-comment`, `/ig-dm`, `/ig-repurpose`.
+
+Проверка текста любой карточки: `python -m igagent lint <id>` — чистка штампов и невидимых символов,
+оценка «человечности» и линтер подписи Instagram. Голос автора для скиллов — `.claude/instagram/voice.md`.
+
 ## Подключение Telegram (5 минут)
 
 1. В Telegram открой **@BotFather** → `/newbot` → придумай имя и username бота → получишь **токен**.
