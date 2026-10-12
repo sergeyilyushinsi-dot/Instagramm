@@ -1,0 +1,23 @@
+id: 20261012-1900-tg-znakomstvo-story
+status: draft
+channel: instagram
+format: story
+rubric: expert_tips
+topic: 'Анонс в сторис: Знакомство: о чём этот канал'
+hook: ''
+scheduled_at: '2026-10-12T19:15:00+03:00'
+caption: ''
+hashtags: []
+alt_text: ''
+reels_script: ''
+cover_text: ''
+slides: []
+media:
+- content/ready/20261012-1900-tg-znakomstvo-story/story.jpg
+media_brief: ''
+notes: Анонс Telegram-поста. При публикации вручную добавь стикер-ссылку на пост — через API этого сделать
+  нельзя.
+teaser_for: 20261012-1900-tg-znakomstvo
+published_id: null
+permalink: null
+error: null

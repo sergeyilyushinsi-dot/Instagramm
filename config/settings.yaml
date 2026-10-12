@@ -10,15 +10,18 @@ instagram:
   api_version: "v23.0"
   base_url: "https://graph.instagram.com"
 
-# Расписание публикаций: дни недели (0 = пн) и время слотов
+# Расписание публикаций: дни недели (0 = пн), время и канал
+#   telegram  — экспертные посты: карусели-карточки и текст
+#   instagram — Reels (сторис планируются отдельно, stories_per_day)
 schedule:
-  posts_per_week: 4
   stories_per_day: 2
+  story_time: "13:00"
   slots:
-    - {weekday: 0, time: "19:00"}
-    - {weekday: 2, time: "19:00"}
-    - {weekday: 4, time: "12:00"}
-    - {weekday: 6, time: "11:00"}
+    - {weekday: 0, time: "19:00", channel: telegram}
+    - {weekday: 1, time: "19:00", channel: instagram}
+    - {weekday: 2, time: "19:00", channel: telegram}
+    - {weekday: 4, time: "12:00", channel: telegram}
+    - {weekday: 5, time: "12:00", channel: instagram}
 
 # Безопасность: по умолчанию ничего не уходит без твоего одобрения
 approval:
@@ -32,7 +35,11 @@ media:
   max_reel_seconds: 90
   enhance_photos: true      # лёгкая автокоррекция контраста/резкости
 
-# Где хранить медиа для Instagram (API принимает только публичные URL)
+telegram:
+  channel_title: ""         # название канала — для упоминаний в сторис
+  hashtags: false           # в Telegram хэштеги обычно не нужны
+
+# Где хранить медиа для Instagram (API принимает только публичные URL; Telegram не требует)
 storage:
   provider: s3              # s3 (AWS / Cloudflare R2 / любой S3-совместимый)
   prefix: "instagram/"

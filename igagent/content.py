@@ -168,6 +168,7 @@ def write_post(item: QueueItem, media_paths: list[Path] | None = None) -> QueueI
 
     insights = analytics.latest_insights_text()
     prompt = f"""Напиши текст для публикации в Instagram.
+Канал: {item.channel}
 Формат: {item.format}
 Рубрика: {item.rubric}
 Тема: {item.topic}
@@ -180,7 +181,8 @@ def write_post(item: QueueItem, media_paths: list[Path] | None = None) -> QueueI
 
 Требования: первая строка — сильный крючок; абзацы короткие; в конце один CTA из профиля
 (или лучше подходящий по смыслу); хэштегов не больше лимита из профиля, без запрещённых.
-Для story подпись короткая (это текст на экране)."""
+Для story подпись короткая (это текст на экране). Для Telegram текст может быть развёрнутым (до 3000 знаков),
+с подзаголовками-абзацами, хэштеги не нужны; для Reels — короткая подпись с вопросом."""
     text = llm.parse(blocks + [{"type": "text", "text": prompt}], PostText)
     item.hook, item.caption, item.alt_text = text.hook, text.caption, text.alt_text
     hashtag_cfg = config.profile().get("hashtags", {})
@@ -188,12 +190,14 @@ def write_post(item: QueueItem, media_paths: list[Path] | None = None) -> QueueI
     tags = [t.lstrip("#") for t in hashtag_cfg.get("always", [])] + text.hashtags
     tags = [t for t in dict.fromkeys(tags) if t.lower() not in banned]
     item.hashtags = tags[: hashtag_cfg.get("max_per_post", 8)]
+    if item.channel == "telegram" and not config.settings().get("telegram", {}).get("hashtags", False):
+        item.hashtags = []
     item.reels_script, item.cover_text = text.reels_script, text.cover_text
     if not media_paths:
         item.media_brief = text.media_brief or item.media_brief
 
     # Экспертная карусель без фото — генерируем слайды сами
-    if item.format == "carousel" and not media_paths:
+    if item.format == "carousel" and not media_paths and item.channel == "telegram":
         carousel = llm.parse(
             f"Сделай текст слайдов карусели по теме «{item.topic}». Крючок: {item.hook}. "
             "На слайде: заголовок до 8 слов и пояснение до 35 слов. Без воды.",
@@ -227,5 +231,40 @@ def ready_to_publish(now: datetime) -> list[QueueItem]:
     from .queue import by_status
 
     statuses = ("approved",) if config.settings()["approval"]["require_for_posts"] else ("approved", "draft")
-    return [i for i in by_status(*statuses)
-            if i.media and i.scheduled_at and i.scheduled_at <= now]
+    ready = []
+    for i in by_status(*statuses):
+        if not (i.media or (i.channel == "telegram" and i.format == "post")):
+            continue
+        if not i.scheduled_at or i.scheduled_at > now:
+            continue
+        if "[УТОЧНИТЬ" in i.caption:  # агент не знает факта — без правки автора не публикуем
+            print(f"-- {i.id}: в тексте есть [УТОЧНИТЬ], допиши перед публикацией")
+            continue
+        ready.append(i)
+    return ready
+
+
+def make_teaser(item: QueueItem, title: str = "", body: str = "", delay_minutes: int = 15) -> QueueItem:
+    """Сторис-анонс Telegram-поста для Instagram (ссылку-стикер добавляют вручную — через API нельзя)."""
+    from datetime import timedelta
+
+    cover = item.slides[0].model_dump() if item.slides else {}
+    card = {
+        "title": title or cover.get("title") or item.hook or item.topic,
+        "body": body or "Новый пост в моём *Telegram-канале*",
+        "cta": "Ссылка в шапке профиля",
+        "visual": cover.get("visual", {}),
+        "image": cover.get("image", ""),
+    }
+    teaser_id = f"{item.id}-story"
+    out = config.READY_DIR / teaser_id / "story.jpg"
+    slides.render_story(card, out, config.profile().get("handle", ""))
+    teaser = QueueItem(
+        id=teaser_id, status="draft", channel="instagram", format="story", rubric=item.rubric,
+        topic=f"Анонс в сторис: {item.topic}", teaser_for=item.id,
+        scheduled_at=item.scheduled_at + timedelta(minutes=delay_minutes) if item.scheduled_at else None,
+        media=[str(out.relative_to(config.ROOT))],
+        notes="Анонс Telegram-поста. При публикации вручную добавь стикер-ссылку на пост — через API этого сделать нельзя.",
+    )
+    teaser.save()
+    return teaser

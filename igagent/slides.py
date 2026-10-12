@@ -17,6 +17,7 @@ from . import config
 
 W, H = 1080, 1350
 PAD = 96
+TOP, BOTTOM = 0, 0   # доп. отступы сверху/снизу (для сторис — зоны под интерфейсом Instagram)
 
 FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -164,24 +165,31 @@ def _background(c: dict, seed: int) -> Image.Image:
     return Image.alpha_composite(img, sharp)
 
 
-def _tokens(text: str) -> list[tuple[str, bool]]:
-    """«Обычный *выделенный* текст» → [(слово, выделено?)]."""
-    out = []
+def _tokens(text: str) -> list[tuple[str, bool, bool]]:
+    """«Обычный *выделенный* текст» → [(слово, выделено?, приклеено к предыдущему?)]."""
+    out, prev = [], ""
     for i, part in enumerate(re.split(r"\*", text)):
-        out += [(w, i % 2 == 1) for w in part.split()]
+        for k, w in enumerate(part.split()):
+            # «*слово*, дальше» — запятая идёт сразу за выделением, без пробела
+            glue = (k == 0 and bool(out) and not part[0].isspace()
+                    and bool(prev) and not prev[-1].isspace())
+            out.append((w, i % 2 == 1, glue))
+        if part:
+            prev = part
     return out
 
 
 def _rich_lines(text: str, fonts: tuple, max_w: int, d: ImageDraw.ImageDraw) -> list[list[tuple[str, bool]]]:
     lines, cur, cur_w = [], [], 0
     space = d.textlength(" ", font=fonts[0])
-    for word, hl in _tokens(text):
+    for word, hl, glue in _tokens(text):
         w = d.textlength(word, font=fonts[hl])
-        if cur and cur_w + space + w > max_w:
+        gap = 0 if glue else space
+        if cur and not glue and cur_w + gap + w > max_w:
             lines.append(cur)
             cur, cur_w = [], 0
-        cur_w += (space if cur else 0) + w
-        cur.append((word, hl))
+        cur_w += (gap if cur else 0) + w
+        cur.append((word, hl, glue))
     if cur:
         lines.append(cur)
     return lines
@@ -194,11 +202,14 @@ def _draw_rich(d, text: str, y: int, fonts: tuple, colors: tuple, max_w: int, li
             continue
         for line in _rich_lines(para, fonts, max_w, d):
             space = d.textlength(" ", font=fonts[0])
-            width = sum(d.textlength(w, font=fonts[h]) for w, h in line) + space * (len(line) - 1)
+            gaps = sum(0 if g else space for _, _, g in line[1:])
+            width = sum(d.textlength(w, font=fonts[h]) for w, h, _ in line) + gaps
             x = (W - width) / 2
-            for w, h in line:
+            for k, (w, h, g) in enumerate(line):
+                if k and not g:
+                    x += space
                 d.text((x, y), w, font=fonts[h], fill=colors[h])
-                x += d.textlength(w, font=fonts[h]) + space
+                x += d.textlength(w, font=fonts[h])
             y += line_h
     return y
 
@@ -228,6 +239,7 @@ def _glass_tiles(img: Image.Image, seed: int) -> None:
     spots = [(115, 640), (965, 610), (120, 1010), (955, 1000), (900, 1170), (950, 800)]
     rnd.shuffle(spots)
     for i, (x, y) in enumerate(spots[:4]):
+        y = int(y * H / 1350)
         size = rnd.randint(70, 130)
         x += rnd.randint(-30, 30)
         y += rnd.randint(-30, 30)
@@ -277,20 +289,20 @@ def _overlay(img: Image.Image, draw_fn) -> None:
 
 def _logo(img: Image.Image, handle: str, c: dict) -> None:
     initials = c["logo_text"] or "".join(p[0] for p in config.profile().get("name", "S").split()[:2]).upper()
-    _overlay(img, lambda o: o.rounded_rectangle([72, 70, 132, 130], radius=16, fill=(255, 255, 255, 45),
+    _overlay(img, lambda o: o.rounded_rectangle([72, 70 + TOP, 132, 130 + TOP], radius=16, fill=(255, 255, 255, 45),
                                                  outline=(200, 225, 255, 200), width=2))
     d = ImageDraw.Draw(img)
     f = _mont(26, 800)
     box = d.textbbox((0, 0), initials, font=f)
-    d.text((102 - (box[2] - box[0]) / 2 - box[0], 100 - (box[3] - box[1]) / 2 - box[1]), initials, font=f, fill="white")
-    d.text((148, 83), handle.lstrip("@"), font=_mont(30, 600), fill="white")
+    d.text((102 - (box[2] - box[0]) / 2 - box[0], 100 + TOP - (box[3] - box[1]) / 2 - box[1]), initials, font=f, fill="white")
+    d.text((148, 83 + TOP), handle.lstrip("@"), font=_mont(30, 600), fill="white")
 
 
 def _cta(img: Image.Image, text: str, c: dict) -> None:
     d = ImageDraw.Draw(img)
     f = _mont(28, 600)
     tw = d.textlength(text, font=f)
-    x0, y0, h = 72, H - 150, 76
+    x0, y0, h = 72, H - 150 - BOTTOM, 76
     x1 = int(x0 + 40 + tw + 24 + 56 + 12)
     _overlay(img, lambda o: o.rounded_rectangle([x0, y0, x1, y0 + h], radius=h // 2, fill=(6, 20, 70, 190),
                                                  outline=(120, 180, 255, 220), width=2))
@@ -314,9 +326,10 @@ def _render_neon(slides: list[dict], out_dir: Path, handle: str) -> list[Path]:
             _glass_tiles(img, seed=idx)
         d = ImageDraw.Draw(img)
         _logo(img, handle, c)
-        counter = f"{idx}/{total}"
-        cf = _mont(26, 600)
-        d.text((W - 72 - d.textlength(counter, font=cf), 88), counter, font=cf, fill=c["muted"])
+        if total > 1:
+            counter = f"{idx}/{total}"
+            cf = _mont(26, 600)
+            d.text((W - 72 - d.textlength(counter, font=cf), 88 + TOP), counter, font=cf, fill=c["muted"])
 
         title = slide.get("title", "")
         number = None
@@ -327,14 +340,14 @@ def _render_neon(slides: list[dict], out_dir: Path, handle: str) -> list[Path]:
         is_cover = idx == 1
         size = 84 if is_cover else 68
         tfonts = (_mont(size, 800), _mont(size, 800, italic=True))
-        y = 210 if is_cover else 190
+        y = (210 if is_cover else 190) + TOP
         y = _draw_rich(d, title, y, tfonts, (c["text"], c["accent"]), W - 160, int(size * 1.16))
         body = slide.get("body", "")
         if body:
             bfonts = (_mont(34, 500), _mont(34, 700))
             y = _draw_rich(d, body, y + 34, bfonts, (c["muted"], c["accent"]), W - 220, 48)
 
-        hero_top, hero_bottom = max(y + 50, 640), H - 190
+        hero_top, hero_bottom = max(y + 50, 640 + TOP), H - 190 - BOTTOM
         hero_center = (W // 2, (hero_top + hero_bottom) // 2)
         image = slide.get("image")
         visual = slide.get("visual") or {}
@@ -653,3 +666,19 @@ def _visual(img, box, v, c) -> None:
     if note:
         d = ImageDraw.Draw(img)
         _center_text(d, note, W / 2, y1 + 22, _mont(22, 500), c["muted"])
+
+
+def render_story(card: dict, out_path: Path, handle: str) -> Path:
+    """Сторис 1080x1920 в той же теме: card = {title, body, cta, visual|image}."""
+    global H, TOP, BOTTOM
+    saved = H, TOP, BOTTOM
+    H, TOP, BOTTOM = 1920, 200, 230
+    try:
+        tmp_dir = out_path.parent / ".story_tmp"
+        path = _render_neon([card], tmp_dir, handle)[0]
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        path.replace(out_path)
+        tmp_dir.rmdir()
+        return out_path
+    finally:
+        H, TOP, BOTTOM = saved

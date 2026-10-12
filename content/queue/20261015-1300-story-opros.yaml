@@ -1,0 +1,26 @@
+id: 20261015-1300-story-opros
+status: draft
+channel: instagram
+format: story
+rubric: engagement
+topic: 'Опрос: маркетолог — это кто?'
+hook: ''
+scheduled_at: '2026-10-15T13:00:00+03:00'
+caption: ''
+hashtags: []
+alt_text: ''
+reels_script: ''
+cover_text: ''
+slides: []
+media:
+- content/ready/20261015-1300-story-opros/story.jpg
+media_brief: ''
+notes: 'Неделя 1: запуск Telegram-канала. Telegram — экспертные посты с карточками, Instagram — Reels
+  и сторис-анонсы.
+
+  Добавь вручную стикер-опрос: «SMM-щик / Стратег / Аналитик / Всё сразу». Через API стикеры не добавляются
+  — эту сторис лучше выложить руками.'
+teaser_for: null
+published_id: null
+permalink: null
+error: null

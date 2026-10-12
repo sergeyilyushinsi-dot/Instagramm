@@ -58,28 +58,38 @@ voice:
       Именно это фото характеризует хаос моего порядка, кто то прыгает, а кто то смеётся, другой вообще задумался. Но все это, так гармонично смотрится вместе.
       Спасибо за отличный день, вы лучшие!❤️
 
-# Рубрики и их доля в контенте (сумма ≈ 1.0)
+# Каналы и их роли
+channels:
+  telegram: "основная площадка экспертного контента: карусели-карточки с инфографикой и развёрнутый текст"
+  instagram: "живой контент: Reels и сторис — закулисье, личное, вовлечение; сторис анонсируют посты из Telegram"
+
+# Рубрики, их доля и где выходят (formats: telegram — carousel/post/image, instagram — reels/story)
 rubrics:
   - id: expert_tips
     title: "Экспертные советы"
     share: 0.35
-    formats: [carousel, reels]
+    channel: telegram
+    formats: [carousel, post]
   - id: cases
     title: "Кейсы и разборы"
     share: 0.15
-    formats: [carousel, image]
+    channel: telegram
+    formats: [carousel, post]
   - id: behind_scenes
     title: "Закулисье работы"
     share: 0.15
+    channel: instagram
     formats: [reels, story]
   - id: personal_life
     title: "Личная жизнь"
     share: 0.25
-    formats: [image, carousel, reels, story]
+    channel: instagram
+    formats: [reels, story]
   - id: engagement
     title: "Вовлечение: вопросы, опросы, мнения"
     share: 0.10
-    formats: [story, image]
+    channel: instagram
+    formats: [story]
 
 # Цель аккаунта — от неё зависят призывы к действию
 # Консультации сейчас не продаю — никаких продающих призывов

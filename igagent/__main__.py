@@ -27,7 +27,7 @@ def cmd_write(_):
 
 
 def cmd_publish(_):
-    for item in publisher.publish_due(Instagram()):
+    for item in publisher.publish_due():
         print(f"{item.status}: {item.id} {item.permalink or item.error or ''}")
 
 
@@ -50,14 +50,25 @@ def cmd_comments(_):
 
 def cmd_status(_):
     rows = ["# Очередь контента\n",
-            "| Когда | Статус | Формат | Тема | Медиа | Файл |", "|---|---|---|---|---|---|"]
+            "| Когда | Канал | Статус | Формат | Тема | Медиа | Файл |", "|---|---|---|---|---|---|---|"]
     items = sorted(load_all(), key=lambda i: i.scheduled_at or datetime.max.replace(tzinfo=config.tz()))
     for i in items:
         when = f"{i.scheduled_at:%a %d.%m %H:%M}" if i.scheduled_at else "—"
         media = f"{len(i.media)} шт." if i.media else f"нужно: {i.media_brief or '—'}"
-        rows.append(f"| {when} | {i.status} | {i.format} | {i.topic} | {media} | [yaml](../content/queue/{i.id}.yaml) |")
+        channel = "Telegram" if i.channel == "telegram" else "Instagram"
+        rows.append(f"| {when} | {channel} | {i.status} | {i.format} | {i.topic} | {media} | [yaml](../content/queue/{i.id}.yaml) |")
     (config.REPORTS_DIR / "queue.md").write_text("\n".join(rows) + "\n", encoding="utf-8")
     print("\n".join(rows))
+
+
+def cmd_teaser(args):
+    """Сторис-анонс для Telegram-поста: python -m igagent teaser <id карточки>."""
+    import yaml
+    from .queue import QueueItem
+    path = config.QUEUE_DIR / f"{args.item_id}.yaml"
+    item = QueueItem.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    teaser = content.make_teaser(item)
+    print(f"draft: {teaser.id} → {teaser.media[0]}")
 
 
 def cmd_refresh_token(_):
@@ -74,7 +85,8 @@ def cmd_refresh_token(_):
 CLAUDE = ["ANTHROPIC_API_KEY"]
 IG = ["IG_USER_ID", "IG_ACCESS_TOKEN"]
 S3 = ["S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "PUBLIC_MEDIA_BASE_URL"]
-NEEDS = {"inbox": [], "publish": IG + S3, "comments": IG + CLAUDE, "analyze": IG + CLAUDE,
+TG = ["TG_BOT_TOKEN", "TG_CHANNEL"]
+NEEDS = {"inbox": [], "publish": [], "comments": IG + CLAUDE, "analyze": IG + CLAUDE,
          "plan": CLAUDE, "write": CLAUDE, "sync": IG, "status": []}
 
 
@@ -88,7 +100,7 @@ def cmd_check(_):
 
     def report(name, fn):
         nonlocal ok
-        missing = _missing({"Claude": CLAUDE, "Instagram": IG, "Хранилище": S3}[name])
+        missing = _missing({"Claude": CLAUDE, "Instagram": IG, "Хранилище": S3, "Telegram": TG}[name])
         if missing:
             ok = False
             print(f"❌ {name}: не заданы секреты {', '.join(missing)}")
@@ -128,6 +140,11 @@ def cmd_check(_):
         s3.head_bucket(Bucket=os.environ["S3_BUCKET"])
         return f"бакет {os.environ['S3_BUCKET']} доступен"
 
+    def telegram():
+        from .telegram import Telegram
+        return Telegram().check()
+
+    report("Telegram", telegram)
     report("Instagram", instagram)
     report("Claude", claude)
     report("Хранилище", storage)
@@ -182,6 +199,7 @@ COMMANDS = {
     "comments": (cmd_comments, "черновики ответов и отправка одобренных"),
     "status": (cmd_status, "сводка очереди в reports/queue.md"),
     "refresh-token": (cmd_refresh_token, "продлить токен Instagram"),
+    "teaser": (cmd_teaser, "сделать сторис-анонс Telegram-поста: teaser <id>"),
     "check": (cmd_check, "проверить подключения к Instagram, Claude и хранилищу"),
     "onpush": (cmd_onpush, "после push: inbox, публикация, комментарии"),
     "tick": (cmd_tick, "всё по расписанию (для cron)"),
@@ -192,7 +210,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="igagent", description="Агент для Instagram")
     sub = parser.add_subparsers(dest="command", required=True)
     for name, (_, help_text) in COMMANDS.items():
-        sub.add_parser(name, help=help_text)
+        sp = sub.add_parser(name, help=help_text)
+        if name == "teaser":
+            sp.add_argument("item_id")
     args = parser.parse_args()
     COMMANDS[args.command][0](args)
 

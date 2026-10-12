@@ -13,7 +13,8 @@ from .queue import QueueItem, load_all, new_id
 class PlannedPost(BaseModel):
     slot_index: int = Field(description="Индекс слота из списка, для story — -1")
     day_offset: int = Field(description="Для story: день недели плана 0-6, для постов — 0")
-    format: Literal["image", "carousel", "reels", "story"]
+    channel: Literal["telegram", "instagram"] = Field(description="Канал — как у выбранного слота; сторис — instagram")
+    format: Literal["image", "carousel", "reels", "story", "post"]
     rubric: str
     topic: str
     hook: str = Field(description="Крючок / первая фраза")
@@ -27,7 +28,11 @@ class WeekPlan(BaseModel):
     stories_idea: str = Field(description="Общая идея сторис на неделю (опросы, закулисье)")
 
 
-def upcoming_slots(start: datetime, days: int = 7) -> list[datetime]:
+def upcoming_slots(start: datetime, days: int = 7, channel: str | None = None) -> list[datetime]:
+    return [dt for dt, ch in upcoming_slots_with_channel(start, days) if channel in (None, ch)]
+
+
+def upcoming_slots_with_channel(start: datetime, days: int = 7) -> list[tuple[datetime, str]]:
     slots = config.settings()["schedule"]["slots"]
     out = []
     for d in range(days):
@@ -37,8 +42,12 @@ def upcoming_slots(start: datetime, days: int = 7) -> list[datetime]:
                 h, m = map(int, s["time"].split(":"))
                 dt = datetime.combine(day, time(h, m), tzinfo=config.tz())
                 if dt > start:
-                    out.append(dt)
+                    out.append((dt, s.get("channel", "instagram")))
     return sorted(out)
+
+
+def channel_for(fmt: str) -> str:
+    return "instagram" if fmt in ("reels", "story") else "telegram"
 
 
 def next_free_slot(fmt: str = "image") -> datetime:
@@ -46,7 +55,7 @@ def next_free_slot(fmt: str = "image") -> datetime:
     if fmt == "story":
         return now + timedelta(hours=1)
     taken = {i.scheduled_at for i in load_all() if i.scheduled_at and i.status not in ("failed", "skipped")}
-    for slot in upcoming_slots(now, days=60):
+    for slot in upcoming_slots(now, days=60, channel=channel_for(fmt)):
         if slot not in taken:
             return slot
     return now + timedelta(days=1)
@@ -55,12 +64,15 @@ def next_free_slot(fmt: str = "image") -> datetime:
 def plan_week(start: datetime | None = None) -> list[QueueItem]:
     start = start or datetime.now(config.tz())
     taken = {i.scheduled_at for i in load_all() if i.scheduled_at}
-    slots = [s for s in upcoming_slots(start) if s not in taken]
+    slot_pairs = [(s, ch) for s, ch in upcoming_slots_with_channel(start) if s not in taken]
+    slots = [s for s, _ in slot_pairs]
     recent = [f"{i.scheduled_at:%d.%m} {i.rubric}: {i.topic}" for i in load_all()[-30:] if i.scheduled_at]
     stories = config.settings()["schedule"].get("stories_per_day", 0)
 
     prompt = f"""Составь контент-план на неделю с {start:%d.%m.%Y}.
-Свободные слоты для постов (индекс: время): {[f"{n}: {s:%a %d.%m %H:%M}" for n, s in enumerate(slots)]}
+Свободные слоты (индекс: время, канал): {[f"{n}: {s:%a %d.%m %H:%M} {ch}" for n, (s, ch) in enumerate(slot_pairs)]}
+Telegram — экспертные карусели с инфографикой и текстовые посты; Instagram — Reels.
+Сторис идут в Instagram: анонсы Telegram-постов, закулисье, опросы.
 Сторис: по {stories} в день — запланируй {min(stories * 7, 7)} самых важных (остальные автор снимет сам).
 
 Соблюдай доли рубрик из профиля, чередуй экспертное и личное, не повторяй недавние темы:
@@ -69,21 +81,22 @@ def plan_week(start: datetime | None = None) -> list[QueueItem]:
 Аналитика и спрос аудитории:
 {analytics.latest_insights_text()}
 
-Предпочитай форматы, которые лучше заходят. Экспертные карусели можно делать без фото —
-слайды сгенерируются автоматически."""
+Предпочитай форматы, которые лучше заходят. Экспертные карусели для Telegram делаются без фото —
+слайды с инфографикой сгенерируются автоматически."""
     plan = llm.parse(prompt, WeekPlan, effort="high")
 
     items = []
     for p in plan.posts:
         if p.format == "story":
             day = (start + timedelta(days=max(0, min(6, p.day_offset)))).date()
-            when = datetime.combine(day, time(13, 0), tzinfo=config.tz())
+            h, m = map(int, config.settings()["schedule"].get("story_time", "13:00").split(":"))
+            when = datetime.combine(day, time(h, m), tzinfo=config.tz())
         elif 0 <= p.slot_index < len(slots):
             when = slots[p.slot_index]
         else:
             continue
         item = QueueItem(
-            id=new_id(p.topic, when), status="idea", format=p.format, rubric=p.rubric, topic=p.topic,
+            id=new_id(p.topic, when), status="idea", channel=channel_for(p.format), format=p.format, rubric=p.rubric, topic=p.topic,
             hook=p.hook, scheduled_at=when,
             media_brief="" if p.media_needed.strip().lower() == "не нужно" else p.media_needed,
             notes=f"Неделя: {plan.theme_of_week}\nПочему: {p.why}",

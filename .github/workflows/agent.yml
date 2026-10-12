@@ -1,4 +1,4 @@
-name: instagram-agent
+name: content-agent
 
 on:
   schedule:
@@ -32,6 +32,8 @@ jobs:
       S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
       S3_REGION: ${{ secrets.S3_REGION }}
       PUBLIC_MEDIA_BASE_URL: ${{ secrets.PUBLIC_MEDIA_BASE_URL }}
+      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+      TG_CHANNEL: ${{ secrets.TG_CHANNEL }}
     steps:
       - uses: actions/checkout@v4
         with:

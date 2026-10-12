@@ -17,7 +17,9 @@ from pydantic import BaseModel, Field
 from . import config
 
 Status = Literal["idea", "draft", "approved", "published", "failed", "skipped"]
-Format = Literal["image", "carousel", "reels", "story"]
+Channel = Literal["instagram", "telegram"]
+# instagram: reels, story · telegram: post (текст), image, carousel (альбом карточек)
+Format = Literal["image", "carousel", "reels", "story", "post"]
 
 
 class Slide(BaseModel):
@@ -31,6 +33,7 @@ class Slide(BaseModel):
 class QueueItem(BaseModel):
     id: str
     status: Status = "idea"
+    channel: Channel = "instagram"
     format: Format
     rubric: str
     topic: str
@@ -45,6 +48,7 @@ class QueueItem(BaseModel):
     media: list[str] = Field(default_factory=list)      # пути к файлам в content/ready
     media_brief: str = ""                               # что снять/найти, если медиа ещё нет
     notes: str = ""
+    teaser_for: str | None = None                       # сторис-анонс этого поста (id карточки)
     published_id: str | None = None
     permalink: str | None = None
     error: str | None = None
