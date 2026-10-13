@@ -50,7 +50,10 @@ def _publish_telegram(item: QueueItem, paths) -> None:
 
 
 def publish_item(item: QueueItem) -> QueueItem:
+    from .textfix import clean
+
     paths = [config.ROOT / m for m in item.media]
+    item.caption = clean(item.caption)  # штампы, канцелярит, невидимые символы — без поломки грамматики
     try:
         if item.channel == "telegram":
             _publish_telegram(item, paths)

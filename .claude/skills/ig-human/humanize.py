@@ -103,7 +103,7 @@ def pass_typographic(text, lex):
     ru = is_russian(text)
     for entry in lex["typographic"]:
         ch = entry["from"]
-        if ru and ch in "—–":  # [ru] тире в русском — норма, не трогаем
+        if ru and ch in "—–→•·«»":  # [ru] тире, стрелки, маркеры списка — норма для русского текста
             continue
         n = text.count(ch)
         if not n:
@@ -220,6 +220,11 @@ def humanize(text, lex):
     text, inv = pass_invisible(text, lex)
     text, typo = pass_typographic(text, lex)
     text, lexi = pass_lexical(text, lex)
+    if is_russian(text):  # [ru] штампы и канцелярит — автоправка с сохранением грамматики
+        sys.path.insert(0, HERE)
+        from ru_fix import fix as ru_fix
+        text, ru_hits = ru_fix(text)
+        lexi += [{"find": h["rule"], "replace": "(авто)", "count": h["count"], "family": "ru-fix"} for h in ru_hits]
     text = restore_capitals(raw_for_case, text)
     text = restore_urls(text, urls)
     return text.strip() + "\n", {
