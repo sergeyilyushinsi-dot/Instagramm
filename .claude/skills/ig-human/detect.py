@@ -97,8 +97,11 @@ def check_slop(text, lex):
         return 50.0, "empty"
     hits, found = 0, []
     for entry in lex["words"] + lex["phrases"]:
-        pattern = re.compile(r"\b" + re.escape(entry["find"]).replace(r"\ ", r"\s+") + r"\b",
-                             re.IGNORECASE)
+        if entry.get("regex"):  # [ru]
+            pattern = re.compile(entry["regex"], re.IGNORECASE | re.MULTILINE)
+        else:
+            pattern = re.compile(r"\b" + re.escape(entry["find"]).replace(r"\ ", r"\s+") + r"\b",
+                                 re.IGNORECASE)
         n = len(pattern.findall(text))
         if n:
             hits += n

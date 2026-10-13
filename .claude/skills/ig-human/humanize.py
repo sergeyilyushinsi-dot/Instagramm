@@ -141,8 +141,11 @@ def pass_lexical(text, lex):
                      key=lambda e: len(e["find"]), reverse=True)
     for entry in entries:
         find = entry["find"]
-        pattern = re.compile(r"\b" + re.escape(find).replace(r"\ ", r"\s+") + r"\b",
-                             re.IGNORECASE)
+        if entry.get("regex"):  # [ru] своя граница контекста: удаляем только вводную конструкцию
+            pattern = re.compile(entry["regex"], re.IGNORECASE | re.MULTILINE)
+        else:
+            pattern = re.compile(r"\b" + re.escape(find).replace(r"\ ", r"\s+") + r"\b",
+                                 re.IGNORECASE)
         found = pattern.findall(text)
         if not found:
             continue

@@ -102,4 +102,4 @@ cta_options:
 hashtags:
   always: []               # теги, которые всегда добавлять
   banned: []               # никогда не использовать
-  max_per_post: 5          # ig-caption: с 18.12.2025 Instagram учитывает до 5 хэштегов
+  max_per_post: 5          # лимит Instagram с 18.12.2025 (@creators, Справка): до 5 на пост/Reels
