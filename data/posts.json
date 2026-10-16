@@ -114,25 +114,5 @@
     },
     "engagement_rate": 0.3284,
     "save_rate": 0.0
-  },
-  {
-    "id": "18324275656156840",
-    "caption": "#воспоминания #море #калининград",
-    "media_type": "VIDEO",
-    "media_product_type": "REELS",
-    "timestamp": "2024-10-15T12:50:24+0000",
-    "like_count": 11,
-    "comments_count": 2,
-    "permalink": "https://www.instagram.com/reel/DBJOO7dOYkK/",
-    "insights": {
-      "reach": 39,
-      "saved": 0,
-      "shares": 0,
-      "total_interactions": 13,
-      "views": 143,
-      "ig_reels_avg_watch_time": 8479
-    },
-    "engagement_rate": 0.3333,
-    "save_rate": 0.0
   }
 ]
